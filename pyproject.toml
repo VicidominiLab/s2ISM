@@ -8,7 +8,7 @@ version = "0.1.0"
 authors = [
   { name="Alessandro Zunino,Giacomo Garrè", email="alessandro.zunino@iit.it"},
 ]
-description = "A toolbox for image reconstruction in super resolution microscopy"
+description = "Reconstruction algorithm for enhanced resolution and optical sectioning in image scanning microscopy."
 readme = "README.md"
 requires-python = ">=3.7"
 license = {file = "LICENSE.txt"}
