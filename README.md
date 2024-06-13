@@ -9,6 +9,7 @@ and the channel dimension is the flattened 2D dimension of the detector array.
 
 This package also contains a module for simulating instrument-specific PSFs by retrieving the 
 relavant parameters automatically from the raw dataset using a minimization procedure.
+
 **Important**: the current implementation of the automatic PSF generation 
 works under the assumption that the detectors of the array are arranged in a squared fashion.
 If this is not the case for your detector (e.g. AiryScan), you need to provide the PSFs manually.
