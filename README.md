@@ -36,7 +36,7 @@ It requires the following Python packages
 
 ## Documentation
 
-You can findexamples of usage here:
+You can find examples of usage here:
 
 https://github.com/VicidominiLab/s2ISM/tree/main/examples
 
