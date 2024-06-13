@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "s2ism"
+version = "0.3.0"
+authors = [
+  { name="Alessandro Zunino,Giacomo Garrè", email="alessandro.zunino@iit.it"},
+]
+description = "A toolbox for image reconstruction in super resolution microscopy"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {file = "LICENSE.txt"}
+classifiers = [
+	"Programming Language :: Python :: 3.7",
+	"Programming Language :: Python :: 3.8",
+	"Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+]
+dynamic = ["dependencies", "optional-dependencies"]
+
+[project.urls]
+"Homepage" = "https://github.com/VicidominiLab/s2ism"
+"Documentation" = "https://s2ism.readthedocs.io"
