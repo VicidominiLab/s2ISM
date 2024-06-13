@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "s2ism"
-version = "0.3.0"
+version = "0.1.0"
 authors = [
   { name="Alessandro Zunino,Giacomo Garrè", email="alessandro.zunino@iit.it"},
 ]
@@ -24,4 +24,4 @@ dynamic = ["dependencies", "optional-dependencies"]
 
 [project.urls]
 "Homepage" = "https://github.com/VicidominiLab/s2ism"
-"Documentation" = "https://s2ism.readthedocs.io"
+"Documentation" = "https://github.com/VicidominiLab/s2ISM/tree/main/examples"
