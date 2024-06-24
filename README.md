@@ -1,14 +1,18 @@
+[![License](https://img.shields.io/pypi/l/s2ism.svg?color=green)](https://github.com/VicidominiLab/s2ISM/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/s2ism.svg?color=green)](https://pypi.org/project/s2ism/)
+[![Python Version](https://img.shields.io/pypi/pyversions/s2ism.svg?color=green)](https://python.org)
+
 # s²ISM
 
 This python package implements s²ISM (Super-resolution Sectioning Image Scanning Microscopy),
 a computational technique to reconstruct images with enhanced resolution, optical sectioning, signal-to-noise ratio
 and sampling from a conventional ISM dataset acquired by a laser scanning microscope equipped with a detector array.
 
-The ISM dataset should be a numpy array in the format (x, y, time, channel), where the temporal dimension is not mandatory
-and the channel dimension is the flattened 2D dimension of the detector array.
+The ISM dataset should be a numpy array in the format (x, y, channel), where the channel dimension is the flattened 2D
+dimension of the detector array. If the lifetime data are present, the array should be in the format (x, y, time, channel).
 
 This package also contains a module for simulating instrument-specific PSFs by retrieving the 
-relavant parameters automatically from the raw dataset using a minimization procedure.
+relevant parameters automatically from the raw dataset with minimal user inputs.
 
 **Important**: the current implementation of the automatic PSF generation 
 works under the assumption that the detectors of the array are arranged in a squared fashion.
