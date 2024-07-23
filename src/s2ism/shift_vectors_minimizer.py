@@ -1,28 +1,30 @@
 import numpy as np
 from scipy.optimize import minimize
 
+from brighteyes_ism.simulation.detector import det_coords
 
-def shift_matrix() -> np.ndarray:
+
+def shift_matrix(geometry: str = 'rect') -> np.ndarray:
     """
     Function returning phantom shift vectors of the 3x3 central ring.
+
+    Parameters
+    ----------
+    geometry : str
+        Detector geometry. Valid choices are 'rect' or 'hex'.
 
     Returns
     -------
     shift_theor : np.ndarray
         9 x 2 array containing the shift vectors of the 3x3 central ring.
-
     """
 
-    shift_theor = np.zeros((3, 3, 2))
+    coordinates = -det_coords(3, geometry)
 
-    for i, n in enumerate(np.arange(-1, 2)):
-        for j, m in enumerate(np.arange(-1, 2)):
-            shift_theor[i, j, :] = [-n, -m]
-
-    return shift_theor.reshape(9, 2)
+    return coordinates
 
 
-def rotation_matrix(theta: float)-> np.ndarray:
+def rotation_matrix(theta: float) -> np.ndarray:
     """
     Function returning a 2D rotation matrix
 
@@ -36,6 +38,7 @@ def rotation_matrix(theta: float)-> np.ndarray:
     rot : np.ndarray
         2 x 2 rotation matrix.
     """
+
     rot_matrix = np.array([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]])
     rot = np.squeeze(rot_matrix)
 
@@ -43,8 +46,7 @@ def rotation_matrix(theta: float)-> np.ndarray:
 
 
 def mirror_matrix(alpha):
-
-    '''
+    """
     Function returning a 2D mirroring matrix
     Parameters
     ----------
@@ -54,8 +56,8 @@ def mirror_matrix(alpha):
     -------
     mirror : np.ndarray
         2 x 2 mirroring matrix.
+    """
 
-    '''
     mirror = np.array([[1, 0], [0, alpha]])
 
     return mirror
@@ -75,6 +77,7 @@ def crop_shift(shift_exp: np.ndarray) -> np.ndarray:
     shift_cropped : np.ndarray
         9 x 2 array containing the shift vectors of the 3x3 central ring.
     """
+
     nch = 3
     n = int(np.sqrt(shift_exp.shape[0]))
     shift_exp = shift_exp.reshape(n, n, -1)
@@ -106,8 +109,8 @@ def transform_shift_vectors(param, shift):
     a = param[0]
     r = rotation_matrix(param[1])
     m = mirror_matrix(param[2])
-    TransformMatrix = a * r @ m
-    shift_transf = np.einsum('ij,kj -> ki', TransformMatrix, shift)
+    transform_matrix = a * r @ m
+    shift_transf = np.einsum('ij,kj -> ki', transform_matrix, shift)
 
     return shift_transf
 
@@ -196,7 +199,7 @@ def loss_minimizer(shift_m, shift_t, alpha_0, theta_0, tol, opt, mirror):
         return alpha, theta, mirror
 
 
-def find_parameters(shift_exp: np.ndarray, alpha_0: float = 2, theta_0: float = 0.5):
+def find_parameters(shift_exp: np.ndarray, geometry: str, alpha_0: float = 2, theta_0: float = 0.5):
     """
     Function returning the parameters describing the dilatation and rotation operators
 
@@ -219,7 +222,7 @@ def find_parameters(shift_exp: np.ndarray, alpha_0: float = 2, theta_0: float = 
         mirror parameter.
     """
     shift_crop = crop_shift(shift_exp)
-    shift_theor = shift_matrix()
+    shift_theor = shift_matrix(geometry)
     tol = 1e-6
     opt = {'maxiter': 10000}
     params = loss_minimizer(shift_crop, shift_theor, alpha_0, theta_0, tol, opt, mirror=1)
@@ -240,7 +243,7 @@ def find_parameters(shift_exp: np.ndarray, alpha_0: float = 2, theta_0: float = 
     return alpha, theta, mirror
 
 
-def calc_shift_vectors(parameters):
+def calc_shift_vectors(parameters, geometry: str = 'rect'):
     """
     Function returning the theoretical shift vectors after dilatation and rotation operators
 
@@ -254,7 +257,7 @@ def calc_shift_vectors(parameters):
     shift_vectors_array : np.ndarray
         9 x 2 array containing the shift vectors of the 3x3 central ring after dilatation and rotation operators.
     """
-    shift_theor = shift_matrix()
+    shift_theor = shift_matrix(geometry)
     shift_array = transform_shift_vectors(parameters, shift_theor)
 
     return shift_array

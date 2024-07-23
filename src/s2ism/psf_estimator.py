@@ -67,7 +67,7 @@ class GridFinder(sim.GridParameters):
         # assuming a dataset with shape (Ny x Nx x Nch), we crop the outer frame of 5 pixels
 
         shift, _ = ShiftVectors(dset[5:-5, 5:-5, :], usf, ref, filter_sigma=1)
-        par = svm.find_parameters(shift)
+        par = svm.find_parameters(shift, self.geometry)
         self.shift = par[0] * self.pxsizex  # um
         self.rotation = par[1]  # rad
         self.mirroring = par[2]  # +/- 1
@@ -106,7 +106,6 @@ def psf_width(pxsizex: float, pxsizez: float, Nz: int, simPar: sim.simSettings, 
         z = pxsizez * Nz
     else:
         z = pxsizez * (Nz//2)
-
 
     M2 = 3
 
