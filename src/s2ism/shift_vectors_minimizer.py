@@ -63,14 +63,16 @@ def mirror_matrix(alpha):
     return mirror
 
 
-def crop_shift(shift_exp: np.ndarray) -> np.ndarray:
+def crop_shift(shift_exp: np.ndarray, geometry: str = 'rect') -> np.ndarray:
     """
     Function cropping the 3x3 central ring of the shift vectors array
 
     Parameters
     ----------
     shift_exp : np.ndarray
-        9 x 2 array containing the shift vectors of the 3x3 central ring.
+        Nch x 2 array containing the complete shift vectors.
+    geometry : str
+        Detector geometry. Valid choices are 'rect' or 'hex'.
 
     Returns
     -------
@@ -78,16 +80,30 @@ def crop_shift(shift_exp: np.ndarray) -> np.ndarray:
         9 x 2 array containing the shift vectors of the 3x3 central ring.
     """
 
-    nch = 3
-    n = int(np.sqrt(shift_exp.shape[0]))
-    shift_exp = shift_exp.reshape(n, n, -1)
-    shift_cropped = np.zeros((nch, nch, 2))
+    n_crop = 3
+    nch = shift_exp.shape[0]
+    n = int(np.ceil(np.sqrt(nch)))
 
-    for i, l in enumerate(np.arange(-1, 2)):
-        for j, k in enumerate(np.arange(-1, 2)):
-            shift_cropped[i, j, :] = shift_exp[n // 2 + l, n // 2 + k, :]
+    if geometry == 'rect':
+        shift_exp = shift_exp.reshape(n, n, -1)
+        shift_cropped = np.zeros((n_crop, n_crop, 2))
 
-    return shift_cropped.reshape(nch**2, 2)
+        for i, l in enumerate(np.arange(-1, 2)):
+            for j, k in enumerate(np.arange(-1, 2)):
+                shift_cropped[i, j, :] = shift_exp[n // 2 + l, n // 2 + k, :]
+
+        shift_cropped = shift_cropped.reshape(n_crop**2, 2)
+
+    elif geometry == 'hex':
+        c = nch // 2
+        idx_crop = np.sort(np.asarray([c, c - 1, c + 1, c - n, c - n + 1, c + n, c + n - 1], dtype=int))
+
+        shift_cropped = shift_exp[idx_crop]
+
+    else:
+        raise Exception("Detector geometry not valid. Select 'rect' or 'hex'.")
+
+    return shift_cropped
 
 
 def transform_shift_vectors(param, shift):
@@ -211,6 +227,8 @@ def find_parameters(shift_exp: np.ndarray, geometry: str, alpha_0: float = 2, th
         starting point for the magnification parameter
     theta_0: float
         initialization for the rotation parameter
+    geometry : str
+        Detector geometry. Valid choices are 'rect' or 'hex'.
 
     Returns
     -------
@@ -221,7 +239,8 @@ def find_parameters(shift_exp: np.ndarray, geometry: str, alpha_0: float = 2, th
     mirror : float
         mirror parameter.
     """
-    shift_crop = crop_shift(shift_exp)
+
+    shift_crop = crop_shift(shift_exp, geometry)
     shift_theor = shift_matrix(geometry)
     tol = 1e-6
     opt = {'maxiter': 10000}
