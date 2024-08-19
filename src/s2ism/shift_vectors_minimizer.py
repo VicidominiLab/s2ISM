@@ -20,6 +20,7 @@ def shift_matrix(geometry: str = 'rect') -> np.ndarray:
     """
 
     coordinates = -det_coords(3, geometry)
+    coordinates = np.swapaxes(coordinates, 0, 1)
 
     return coordinates
 
@@ -215,7 +216,7 @@ def loss_minimizer(shift_m, shift_t, alpha_0, theta_0, tol, opt, mirror):
         return alpha, theta, mirror
 
 
-def find_parameters(shift_exp: np.ndarray, geometry: str, alpha_0: float = 2, theta_0: float = 0.5):
+def find_parameters(shift_exp: np.ndarray, geometry: str = 'rect', alpha_0: float = 2, theta_0: float = 0.5):
     """
     Function returning the parameters describing the dilatation and rotation operators
 
