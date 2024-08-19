@@ -173,7 +173,6 @@ def psf_estimator_from_data(data: np.ndarray, exPar: sim.simSettings, emPar: sim
     if isinstance(z_out_of_focus, str) and z_out_of_focus == 'ToFind':
         # generating a stack of PSFs along the z-axis and calculating the correlation curve to minimize
         pxsizez, _ = find_out_of_focus_from_param(grid.pxsizex, exPar, emPar, mode='KL', stack='positive')
-        print(pxsizez)
     else:
         pxsizez = float(z_out_of_focus)
         
