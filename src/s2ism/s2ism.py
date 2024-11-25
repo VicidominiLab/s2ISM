@@ -542,10 +542,10 @@ def generate_mask(shape, idx, width=3):
     return m
 
 
-def invariant_denoise(img, width, denoiser):
+def invariant_denoise(img, width, denoiser, h):
     n_masks = width * width
 
-    interp = interpolate_image(img)
+    interp = interpolate_image(img, h)
 
     output = np.zeros(img.shape)
 
@@ -579,7 +579,7 @@ def kl(im_list, ref):
     return loss
 
 
-def est_denoiser_par(raw_data, recs, mask_width=4, par_range = par_range):
+def est_denoiser_par(raw_data, recs, par_range, h, mask_width=4):
     """
     It estimates the parameters of the denoiser.
 
@@ -600,7 +600,7 @@ def est_denoiser_par(raw_data, recs, mask_width=4, par_range = par_range):
     """
 
     inv_recs =  [invariant_denoise(raw_data, mask_width, lambda x:
-                                    bm3d.bm3d(x, sigma)) for sigma in par_range]
+                                    bm3d.bm3d(x, sigma), h) for sigma in par_range]
 
     mse_mask_s2 = mseh(inv_recs, raw_data)
 
