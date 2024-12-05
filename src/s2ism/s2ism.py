@@ -37,7 +37,7 @@ def torch_conv(signal, kernel_fft):
     return conv
 
 
-def amd_update(img, obj, psf, psf_m, eps: float, device: str):
+def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
     """
     It performs an iteration of the AMD algorithm.
 
@@ -76,10 +76,6 @@ def amd_update(img, obj, psf, psf_m, eps: float, device: str):
 
     szt = [Nz] + list(sz_i)
     den = torch.empty(szt).to(device)
-
-    # FFT transform of the 2 given PSFs
-    psf_fft = fftn(psf)
-    psf_m_fft = fftn(psf_m)
 
     # Update
     for z in range(Nz):
@@ -403,8 +399,14 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     cont = 0
     pbar = tqdm(total=total, desc='Progress', position=0)
 
+    # FFT transform of the 2 given PSFs
+    h_fft = fftn(h)
+    del h
+    ht_fft = fftn(ht)
+    del ht
+
     while flag:
-        O_new = amd_update(data_check, O, h, ht, b, device=device)
+        O_new = amd_update(data_check, O, h_fft, ht_fft, b, device=device)
 
         pre_flag, flag, counts[:, k], diff[:, k] = amd_stop(O, O_new, pre_flag, flag, stop, max_iter, threshold, tot,
                                                             Nz, k)
