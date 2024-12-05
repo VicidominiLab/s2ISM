@@ -9,11 +9,10 @@ import torch.nn.functional as torchpad
 from torch.fft import fftn, ifftn, ifftshift
 import brighteyes_ism.analysis.Tools_lib as tool
 
-
 from . import psf_estimator as svr
 
 
-def torch_conv(signal, kernel):
+def torch_conv(signal, kernel_fft):
     """
     It calculates the circular convolution of a real signal with a real kernel using the FFT method using pytorch.
 
@@ -21,8 +20,8 @@ def torch_conv(signal, kernel):
     ----------
     signal : torch.Tensor
         Tensor with N dimensions to be convolved.
-    kernel : torch.Tensor
-        Kernel of the convolution. It has the same number of dimensions of the signal.
+    kernel_fft : torch.Tensor
+        Kernel in the frequency domain of the convolution. It has the same number of dimensions of the signal.
 
     Returns
     -------
@@ -30,7 +29,7 @@ def torch_conv(signal, kernel):
             Circular convolution of signal with kernel.
     """
 
-    conv = fftn(signal) * fftn(kernel)  # product of FFT
+    conv = fftn(signal) * kernel_fft  # product of FFT
     conv = ifftn(conv)  # inverse FFT of the product
     conv = ifftshift(conv)  # Rotation of 180 degrees of the phase of the FFT
     conv = torch.real(conv)  # Clipping to zero the residual imaginary part
@@ -78,11 +77,14 @@ def amd_update(img, obj, psf, psf_m, eps: float, device: str):
     szt = [Nz] + list(sz_i)
     den = torch.empty(szt).to(device)
 
-    # Update
+    # FFT transform of the 2 given PSFs
+    psf_fft = fftn(psf)
+    psf_m_fft = fftn(psf_m)
 
+    # Update
     for z in range(Nz):
         for c in range(Nch):
-            den[z, ..., c] = torch_conv(obj[z], psf[z, ..., c])
+            den[z, ..., c] = torch_conv(obj[z], psf_fft[z, ..., c])
     img_estimate = den.sum(0)
 
     del den
@@ -95,7 +97,7 @@ def amd_update(img, obj, psf, psf_m, eps: float, device: str):
 
     for z in range(Nz):
         for c in range(Nch):
-            up[z, ..., c] = torch_conv(fraction[..., c], psf_m[z, ..., c])
+            up[z, ..., c] = torch_conv(fraction[..., c], psf_m_fft[z, ..., c])
     update = up.sum(-1)
 
     del up, fraction
@@ -115,7 +117,7 @@ def amd_stop(o_old, o_new, pre_flag: bool, flag: bool, stop, max_iter: int, thre
     o_old : np.ndarray
         Object obtained at the latter iteration ( Nz x Nx x Ny ).
     o_new : np.ndarray
-        Object obtained at the current iteration ( Nz x Nx x Ny ).   
+        Object obtained at the current iteration ( Nz x Nx x Ny ).
     pre_flag : bool
         first alert that the derivative of the photon counts has reached the threshold.
         To stop the algorithm both flags must turn into False.
@@ -266,9 +268,9 @@ def batch_reconstruction(dset: np.ndarray, psf: np.ndarray, batch_size: list, ov
 
 def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
                                   threshold: float = 1e-3, rep_to_save: str = 'last', initialization: str = 'flat',
-                                  process: str = 'gpu', denoiser = False):
+                                  process: str = 'gpu', denoiser=False):
     """
-    Core function of the algorithm 
+    Core function of the algorithm
 
     Parameters
     ----------
@@ -405,7 +407,7 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         O_new = amd_update(data_check, O, h, ht, b, device=device)
 
         pre_flag, flag, counts[:, k], diff[:, k] = amd_stop(O, O_new, pre_flag, flag, stop, max_iter, threshold, tot,
-                                                      Nz, k)
+                                                            Nz, k)
         if denoiser:
             sigma_gauss = est_denoiser_par(data_check.sum(-1), O_new[0])
 
@@ -523,8 +525,10 @@ def data_driven_reconstruction(dset: np.ndarray, gridPar, exPar, emPar, rep_to_s
 
     return obj, counts, diff, k, psf
 
+
 from scipy.signal import convolve2d
 import bm3d as bm3d
+
 
 def interpolate_image(x, conv_filter=None):
     if conv_filter is None:
@@ -570,6 +574,7 @@ def mseh(im_list, ref):
 
     return loss
 
+
 def kl(im_list, ref):
     ref = img_as_float(ref)
     im_list = [img_as_float(x) for x in im_list]
@@ -599,12 +604,11 @@ def est_denoiser_par(raw_data, recs, par_range, h, mask_width=4):
 
     """
 
-    inv_recs =  [invariant_denoise(raw_data, mask_width, lambda x:
-                                    bm3d.bm3d(x, sigma), h) for sigma in par_range]
+    inv_recs = [invariant_denoise(raw_data, mask_width, lambda x:
+    bm3d.bm3d(x, sigma), h) for sigma in par_range]
 
     mse_mask_s2 = mseh(inv_recs, raw_data)
 
     sigma_opt = par_range[np.argmax(mse_mask_s2)]
 
     return sigma_opt
-
