@@ -40,17 +40,17 @@ def torch_conv(signal, kernel_fft):
 def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
     """
     It performs an iteration of the AMD algorithm.
-
+    M is the number of fluorophores with distinct fluorescence lifetime
     Parameters
     ----------
     img : np.ndarray
-        Input image ( Nx x Ny x Nch ).
+        Input image ( Nx x Ny x T x Nch ).
     obj : np.ndarray
-        Object estimated from the previous iteration ( Nz x Nx x Ny ) .
+        Object estimated from the previous iteration ( M x Nx x Ny ) .
     psf : np.ndarray
-        Point spread function ( Nz x Nx x Ny x Nch ).
+        Point spread function ( M x Nx x Ny x T x Nch ).
     psf_m : np.ndarray
-        Point spread function with flipped X and Y axis ( Nz x Nx x Ny x Nch ).
+        Point spread function with flipped X and Y axis ( M x Nx x Ny x T x Nch ).
     eps : float
         Division threshold (usually set at the error machine value).
     device : str
@@ -58,7 +58,7 @@ def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
 
     Returns
     -------
-    obj_new : np.ndarray ( Nz x Nx x Ny )
+    obj_new : np.ndarray ( M x Nx x Ny )
         New estimate of the object.
 
     """
@@ -69,18 +69,20 @@ def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
         torch.cuda.empty_cache()
 
     sz_o = obj.shape
-    Nz = sz_o[0]
+    M = sz_o[0]
 
     sz_i = img.shape
     Nch = sz_i[-1]
+    T = sz_i[-2]
 
-    szt = [Nz] + list(sz_i)
+    szt = [M] + list(sz_i)
     den = torch.empty(szt).to(device)
 
     # Update
-    for z in range(Nz):
+    for m in range(M):
         for c in range(Nch):
-            den[z, ..., c] = torch_conv(obj[z], psf_fft[z, ..., c])
+            for t in range(T):
+                den[m, ..., t, c] = torch_conv(obj[m], psf_fft[m, ..., t, c])
     img_estimate = den.sum(0)
 
     del den
@@ -91,29 +93,31 @@ def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
 
     up = torch.empty(szt).to(device)
 
-    for z in range(Nz):
+    for m in range(M):
         for c in range(Nch):
-            up[z, ..., c] = torch_conv(fraction[..., c], psf_m_fft[z, ..., c])
+            for t in range(T):
+                up[m, ..., t, c] = torch_conv(fraction[..., t, c], psf_m_fft[m, ..., t, c])
     update = up.sum(-1)
+    update_t = update.sum(-1)
 
     del up, fraction
 
-    obj_new = obj * update
+    obj_new = obj * update_t
 
     return obj_new
 
 
 def amd_stop(o_old, o_new, pre_flag: bool, flag: bool, stop, max_iter: int, threshold: float,
-             tot: float, nz: int, k: int):
+             tot: float, M: int, k: int):
     """
     function dealing with the iteration stop of the algorithm
 
     Parameters
     ----------
     o_old : np.ndarray
-        Object obtained at the latter iteration ( Nz x Nx x Ny ).
+        Object obtained at the latter iteration ( M x Nx x Ny ).
     o_new : np.ndarray
-        Object obtained at the current iteration ( Nz x Nx x Ny ).
+        Object obtained at the current iteration ( M x Nx x Ny ).
     pre_flag : bool
         first alert that the derivative of the photon counts has reached the threshold.
         To stop the algorithm both flags must turn into False.
@@ -129,8 +133,8 @@ def amd_stop(o_old, o_new, pre_flag: bool, flag: bool, stop, max_iter: int, thre
         halt.
     tot : float
         total number of photons in the ISM dataset.
-    nz : int
-        number of axial planes of interest.
+    M : int
+        is the number of fluorophores with distinct fluorescence lifetime.
     k : int
         indexing the current algorithm iteration.
 
@@ -149,28 +153,28 @@ def amd_stop(o_old, o_new, pre_flag: bool, flag: bool, stop, max_iter: int, thre
 
     """
 
-    # calculating photon flux in the focal plane reconstruction at the previous iteration
-    int_f_old = (o_old[nz // 2]).sum()
+    # calculating photon flux for the reconstructed image of the first species at the previous iteration
+    int_m1_old = (o_old[0]).sum()
 
-    # calculating the photon flux in the focal plane reconstruction at the current iteration
-    int_f_new = (o_new[nz // 2]).sum()
+    # calculating the photon flux for the reconstructed image of the first species at the current iteration
+    int_m1_new = (o_new[0]).sum()
 
-    # calculating the derivative of the photon count function in the focal plane
-    d_int_f = (int_f_new - int_f_old) / tot
+    # calculating the derivative of the photon count function for the reconstructed image of the first species
+    d_int_m1 = (int_m1_new - int_m1_old) / tot
 
     # calculating the photon flux in the out-of-focus planes reconstruction at the previous iteration
-    int_bkg_old = o_old.sum() - int_f_old
+    int_m2_old = (o_old[1]).sum()
 
     # calculating the photon flux in the out-of-focus planes reconstruction at the current iteration
-    int_bkg_new = o_new.sum() - int_f_new
+    int_m2_new = (o_new[1]).sum()
 
     # calculating the derivative of the photon count function in the out-of-focus planes
-    d_int_bkg = (int_bkg_new - int_bkg_old) / tot
+    d_int_m2 = (int_m2_new - int_m2_old) / tot
 
     # controlling if the derivative value is under the threshold. The algorithm derivative has to lye under the
     # threshold for two consecutive iterations to stop.
     if isinstance(stop, str) and stop == 'auto':
-        if torch.abs(d_int_f) < threshold:
+        if torch.abs(d_int_m1) < threshold:
             if not pre_flag:
                 flag = False
             else:
@@ -184,13 +188,14 @@ def amd_stop(o_old, o_new, pre_flag: bool, flag: bool, stop, max_iter: int, thre
         if k == max_iter:
             flag = False
 
-    return pre_flag, flag, torch.Tensor([int_f_new, int_bkg_new]), torch.Tensor([d_int_f, d_int_bkg])
+    return pre_flag, flag, torch.Tensor([int_m1_new, int_m2_new]), torch.Tensor([d_int_m1, d_int_m2])
 
 
 def batch_reconstruction(dset: np.ndarray, psf: np.ndarray, batch_size: list, overlap: int, stop='fixed',
                          max_iter: int = 100, threshold: float = 1e-3, rep_to_save: str = 'last',
                          initialization: str = 'flat', process: str = 'gpu'):
     """
+    ### TO BE REVISIONATO!!!!!!!!!!!!!
 
     Parameters
     ----------
@@ -273,8 +278,7 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     dset : np.ndarray
         Input image ( Nx x Ny x Nt x Nch ).
     psf : np.ndarray
-        Point spread function ( Nz x Nx x Ny x Nt x Nch ). Important : Pass the PSF with his entire shape! If the axial
-        dimension is null, pass the PSF as (1 x Nx x Ny x Nt x Nch).
+        Point spread function ( M x Nx x Ny x Nt x Nch ). Important : Pass the PSF with his entire shape!
     stop : string, optional
         String describing how to stop the algorithm. The default is 'auto'. If set to 'auto' the algorithm will stop
         when the derivative of the photon counts reaches the threshold, if set to 'fixed' the algorithm will stop when
@@ -297,14 +301,14 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
 
     Returns
     -------
-    O : np.ndarray ( Nz x Nx x Ny x Nt) if rep_to_save is equal to 'last'
-                    ( n_iter x Nz x Nx x Ny x Nt) if rep_to_save is equal to 'all'
+    O : np.ndarray ( M x Nx x Ny) if rep_to_save is equal to 'last'
+                    ( n_iter x M x Nx x Ny) if rep_to_save is equal to 'all'
         reconstructed object.
     counts : np.ndarray ( k x 2 )
-            It describes the number of photons on the focal plane and on the out-of-focus planes for every iteration of
+            It describes the number of photons for the first species and the second species for every iteration of
             the algorithm.
     diff : np.ndarray ( k x 2 )
-        It describes the derivative of the photon counts on the focal plane and on the out-of-focus planes for every
+        It describes the derivative of the photon counts for the first species and the second species for every
         iteration of the algorithm.
     k : int
         iteration in which the algorithm stops.
@@ -312,7 +316,6 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     """
 
     # Variables initialization taking into account if the data is spread along the axial dimension or not
-
     device = torch.device("cuda:0" if torch.cuda.is_available() and process == 'gpu' else "cpu")
 
     data = torch.from_numpy(dset * 1.).to(device)
@@ -331,11 +334,11 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         check_y = True
         data_check = data_check[:, 1:]
 
-    Nz = h.shape[0]
+    M = h.shape[0]
     shape_data = data_check.shape
     Nx = shape_data[0]
     Ny = shape_data[1]
-    shape_init = (Nz,) + shape_data[:-1]
+    shape_init = (M,) + shape_data[:-2]
     O = torch.ones(shape_init).to(device)
 
     crop_pad_x = int((shape_data[0] - h.shape[1]) / 2)
@@ -351,10 +354,9 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     elif crop_pad_x < 0 or crop_pad_y < 0:
         raise Exception('The PSF is bigger than the image. Warning.')
 
-    flip_ax = list(np.arange(1, len(data_check.shape)))
-
-    for j in range(Nz):
-        h[j] = h[j] / (h[j].sum())
+    flip_ax = list(np.arange(1, len(data_check.shape)-1))
+    for m in range(M):
+        h[m] = h[m] / (h[m].sum())
 
     ht = torch.flip(h, flip_ax)
 
@@ -364,11 +366,11 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     # a flat initialization
 
     if initialization == 'sum':
-        S = data_check.sum(-1) / Nz
-        for z in range(Nz):
-            O[z, ...] = S
+        S = data_check.sum(-1) / M
+        for m in range(M):
+            O[m, ...] = S
     elif initialization == 'flat':
-        O *= data_check.sum() / Nz / Nx / Ny
+        O *= data_check.sum() / M / Nx / Ny
     else:
         raise Exception('Initialization mode unknown.')
 
@@ -401,21 +403,16 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
 
     # FFT transform of the 2 given PSFs
     h_fft = fftn(h)
-    del h
     ht_fft = fftn(ht)
+
+    del h
     del ht
 
     while flag:
         O_new = amd_update(data_check, O, h_fft, ht_fft, b, device=device)
 
         pre_flag, flag, counts[:, k], diff[:, k] = amd_stop(O, O_new, pre_flag, flag, stop, max_iter, threshold, tot,
-                                                            Nz, k)
-        if denoiser:
-            sigma_gauss = est_denoiser_par(data_check.sum(-1), O_new[0])
-
-            ttest = bm3d.bm3d(O_new[0], sigma_gauss)
-
-            O_new[0] = torch.from_numpy(ttest)
+                                                            M, k)
 
         if isinstance(rep_to_save, Iterable) and not isinstance(rep_to_save, str):
             if k in rep_to_save:
@@ -468,6 +465,8 @@ def data_driven_reconstruction(dset: np.ndarray, gridPar, exPar, emPar, rep_to_s
                                initialization: str = 'flat', max_iter: int = 100, stop='fixed', threshold: float = 1e-3,
                                downsample: bool = True, z_out_of_focus='ToFind'):
     """
+ ### TO BE REVISIONATO
+
      Parameters
      ----------
     dset : np.ndarray ( Nx x Ny x Nch)
@@ -529,7 +528,7 @@ def data_driven_reconstruction(dset: np.ndarray, gridPar, exPar, emPar, rep_to_s
 
 
 from scipy.signal import convolve2d
-import bm3d as bm3d
+#import bm3d as bm3d
 
 
 def interpolate_image(x, conv_filter=None):
@@ -584,33 +583,3 @@ def kl(im_list, ref):
     loss = [tool.kl_divergence(x, ref, normalize_entries=True).sum() for x in im_list]
 
     return loss
-
-
-def est_denoiser_par(raw_data, recs, par_range, h, mask_width=4):
-    """
-    It estimates the parameters of the denoiser.
-
-    Parameters
-    ----------
-    raw_data : np.ndarray
-        ISM dataset to reconstruct.
-    recs : np.ndarray
-        Reconstructed object.
-    mask_width : int, optional
-        Width of the mask to apply to the ISM dataset. The default is 4.
-
-    Returns
-    -------
-    denoiser_par : dict
-        Dictionary containing the parameters of the denoiser.
-
-    """
-
-    inv_recs = [invariant_denoise(raw_data, mask_width, lambda x:
-    bm3d.bm3d(x, sigma), h) for sigma in par_range]
-
-    mse_mask_s2 = mseh(inv_recs, raw_data)
-
-    sigma_opt = par_range[np.argmax(mse_mask_s2)]
-
-    return sigma_opt
