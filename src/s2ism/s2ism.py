@@ -355,6 +355,8 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         raise Exception('The PSF is bigger than the image. Warning.')
 
     flip_ax = list(np.arange(1, len(data_check.shape)-1))
+    print(f'flip_ax: {flip_ax}')
+    
     for m in range(M):
         h[m] = h[m] / (h[m].sum())
 
@@ -366,7 +368,7 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     # a flat initialization
 
     if initialization == 'sum':
-        S = data_check.sum(-1) / M
+        S = data_check.sum((-2,-1)) / M
         for m in range(M):
             O[m, ...] = S
     elif initialization == 'flat':
@@ -403,10 +405,18 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
 
     # FFT transform of the 2 given PSFs
     h_fft = fftn(h)
-    ht_fft = fftn(ht)
-
     del h
+    ht_fft = fftn(ht)
     del ht
+
+    print('input data shape')
+    print(data_check.shape)
+    print('Object shape')
+    print(O.shape)
+    print('PSF shape')
+    print(h_fft.shape)
+    print('PSF flipped shape')
+    print(ht_fft.shape)
 
     while flag:
         O_new = amd_update(data_check, O, h_fft, ht_fft, b, device=device)
