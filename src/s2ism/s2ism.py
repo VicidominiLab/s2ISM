@@ -399,10 +399,10 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     cont = 0
     pbar = tqdm(total=total, desc='Progress', position=0)
 
-    # FFT transform of the 2 given PSFs
-    h_fft = fftn(h)
+    # FFT transform on the spatial dimensions of the 2 given PSFs
+    h_fft = fftn(h, dim=flip_ax)
     del h
-    ht_fft = fftn(ht)
+    ht_fft = fftn(ht, dim=flip_ax)
     del ht
 
     while flag:
