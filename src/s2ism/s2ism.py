@@ -14,7 +14,7 @@ from . import psf_estimator as svr
 
 def torch_conv(signal, kernel_fft):
     """
-    It calculates the circular convolution of a real signal with a real kernel using the FFT method using pytorch.
+    It calculates the 2D circular convolution of a real signal with a kernel using the FFT method using pytorch.
 
     Parameters
     ----------
@@ -36,6 +36,36 @@ def torch_conv(signal, kernel_fft):
 
     return conv
 
+def optmized_conv(signal, kernel_fft):
+    """
+    It calculates the 2D circular convolution of a real signal with a kernel using the FFT method using pytorch.
+
+    Parameters
+    ----------
+    signal : torch.Tensor
+        Tensor with dimensions (M, Nx, Ny) OR (Nx, Ny, T Ch) to be convolved.
+    kernel_fft : torch.Tensor
+        Kernel with dimension (M, Nx, Ny, T, Ch) in the frequency domain of the convolution.
+
+    Returns
+    -------
+        conv : torch.Tensor
+            Circular convolution of signal with kernel.
+    """
+
+    if signal.dim() == 3:
+        signal = signal.unsqueeze(-1).unsqueeze(-1) # (M, Nx, Ny, 1, 1)
+    elif signal.dim() == 4:
+        signal = signal.unsqueeze(0) # (1, Nx, Ny, T, Ch)
+    else:
+        raise Exception('The signal must have 3 or 4 dimensions.')
+
+    conv = fftn(signal, dim=(1,2)) * kernel_fft  # product of FFT
+    conv = ifftn(conv, dim=(1,2))  # inverse FFT of the product
+    conv = ifftshift(conv, dim=(1,2))  # Rotation of 180 degrees of the phase of the FFT
+    conv = torch.real(conv)  # Clipping to zero the residual imaginary part
+
+    return conv
 
 def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
     """
@@ -79,10 +109,11 @@ def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
     den = torch.empty(szt).to(device)
 
     # Update
-    for m in range(M):
-        for c in range(Nch):
-            for t in range(T):
-                den[m, ..., t, c] = torch_conv(obj[m], psf_fft[m, ..., t, c])
+    # for m in range(M):
+    #     for c in range(Nch):
+    #         for t in range(T):
+    #             den[m, ..., t, c] = torch_conv(obj[m], psf_fft[m, ..., t, c])
+    den = optmized_conv(obj, psf_fft)
     img_estimate = den.sum(0)
 
     del den
@@ -93,14 +124,15 @@ def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
 
     up = torch.empty(szt).to(device)
 
-    for m in range(M):
-        for c in range(Nch):
-            for t in range(T):
-                up[m, ..., t, c] = torch_conv(fraction[..., t, c], psf_m_fft[m, ..., t, c])
+    # for m in range(M):
+    #     for c in range(Nch):
+    #         for t in range(T):
+    #             up[m, ..., t, c] = torch_conv(fraction[..., t, c], psf_m_fft[m, ..., t, c])
+    up = optmized_conv(fraction, psf_m_fft)
     update = up.sum(-1)
     update_t = update.sum(-1)
 
-    del up, fraction
+    del fraction
 
     obj_new = obj * update_t
 
@@ -338,6 +370,8 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     shape_data = data_check.shape
     Nx = shape_data[0]
     Ny = shape_data[1]
+    T = shape_data[2]
+    Ch = shape_data[3]
     shape_init = (M,) + shape_data[:-2]
     O = torch.ones(shape_init).to(device)
 
@@ -354,8 +388,7 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     elif crop_pad_x < 0 or crop_pad_y < 0:
         raise Exception('The PSF is bigger than the image. Warning.')
 
-    flip_ax = list(np.arange(1, len(data_check.shape)-1))
-    print(f'flip_ax: {flip_ax}')
+    flip_ax = list(np.arange(1, len(data_check.shape)-1)) #spatial axes
     
     for m in range(M):
         h[m] = h[m] / (h[m].sum())
@@ -404,19 +437,10 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     pbar = tqdm(total=total, desc='Progress', position=0)
 
     # FFT transform of the 2 given PSFs
-    h_fft = fftn(h)
+    h_fft = fftn(h, dim=flip_ax)
     del h
-    ht_fft = fftn(ht)
+    ht_fft = fftn(ht, dim=flip_ax)
     del ht
-
-    print('input data shape')
-    print(data_check.shape)
-    print('Object shape')
-    print(O.shape)
-    print('PSF shape')
-    print(h_fft.shape)
-    print('PSF flipped shape')
-    print(ht_fft.shape)
 
     while flag:
         O_new = amd_update(data_check, O, h_fft, ht_fft, b, device=device)
