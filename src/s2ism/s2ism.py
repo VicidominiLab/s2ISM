@@ -264,7 +264,7 @@ def batch_reconstruction(dset: np.ndarray, psf: np.ndarray, batch_size: list, ov
 
 def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
                                   threshold: float = 1e-3, rep_to_save: str = 'last', initialization: str = 'flat',
-                                  process: str = 'gpu', denoiser=False):
+                                  process: str = 'gpu'):
     """
     Core function of the algorithm
 
@@ -410,12 +410,6 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
 
         pre_flag, flag, counts[:, k], diff[:, k] = amd_stop(O, O_new, pre_flag, flag, stop, max_iter, threshold, tot,
                                                             Nz, k)
-        if denoiser:
-            sigma_gauss = est_denoiser_par(data_check.sum(-1), O_new[0])
-
-            ttest = bm3d.bm3d(O_new[0], sigma_gauss)
-
-            O_new[0] = torch.from_numpy(ttest)
 
         if isinstance(rep_to_save, Iterable) and not isinstance(rep_to_save, str):
             if k in rep_to_save:
@@ -526,91 +520,3 @@ def data_driven_reconstruction(dset: np.ndarray, gridPar, exPar, emPar, rep_to_s
                                                          rep_to_save=rep_to_save, initialization=initialization)
 
     return obj, counts, diff, k, psf
-
-
-from scipy.signal import convolve2d
-import bm3d as bm3d
-
-
-def interpolate_image(x, conv_filter=None):
-    if conv_filter is None:
-        conv_filter = np.array([[0, 0.25, 0], [0.25, 0, 0.25], [0, 0.25, 0]])
-    return convolve2d(x, conv_filter, mode='same')
-
-
-def generate_mask(shape, idx, width=3):
-    m = np.zeros(shape)
-
-    phasex = idx % width
-    phasey = (idx // width) % width
-
-    m[phasex::width, phasey::width] = 1
-    return m
-
-
-def invariant_denoise(img, width, denoiser, h):
-    n_masks = width * width
-
-    interp = interpolate_image(img, h)
-
-    output = np.zeros(img.shape)
-
-    for i in range(n_masks):
-        m = generate_mask(img.shape, i, width=width)
-        input_image = m * interp + (1 - m) * img
-        input_image = input_image.astype(img.dtype)
-        output += m * denoiser(input_image)
-    return output
-
-
-from skimage.metrics import mean_squared_error as mse
-
-from skimage import data, img_as_float, img_as_ubyte
-
-
-def mseh(im_list, ref):
-    ref = img_as_float(ref)
-    im_list = [img_as_float(x) for x in im_list]
-
-    loss = [mse(x, ref) for x in im_list]
-
-    return loss
-
-
-def kl(im_list, ref):
-    ref = img_as_float(ref)
-    im_list = [img_as_float(x) for x in im_list]
-
-    loss = [tool.kl_divergence(x, ref, normalize_entries=True).sum() for x in im_list]
-
-    return loss
-
-
-def est_denoiser_par(raw_data, recs, par_range, h, mask_width=4):
-    """
-    It estimates the parameters of the denoiser.
-
-    Parameters
-    ----------
-    raw_data : np.ndarray
-        ISM dataset to reconstruct.
-    recs : np.ndarray
-        Reconstructed object.
-    mask_width : int, optional
-        Width of the mask to apply to the ISM dataset. The default is 4.
-
-    Returns
-    -------
-    denoiser_par : dict
-        Dictionary containing the parameters of the denoiser.
-
-    """
-
-    inv_recs = [invariant_denoise(raw_data, mask_width, lambda x:
-    bm3d.bm3d(x, sigma), h) for sigma in par_range]
-
-    mse_mask_s2 = mseh(inv_recs, raw_data)
-
-    sigma_opt = par_range[np.argmax(mse_mask_s2)]
-
-    return sigma_opt
