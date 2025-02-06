@@ -175,10 +175,13 @@ def psf_estimator_from_data(data: np.ndarray, exPar: sim.simSettings, emPar: sim
         pxsizez, _ = find_out_of_focus_from_param(grid.pxsizex, exPar, emPar, mode='KL', stack='positive')
     else:
         pxsizez = float(z_out_of_focus)
-        
+
     # find rotation, mirroring, and magnification parameters from the data
     grid_simul = GridFinder(grid)
     grid_simul.estimate(data, exPar.wl, emPar.wl, emPar.na)
+
+    grid_simul.Print()
+
     if downsample is True:
         ups = find_upsampling(grid_simul.pxsizex, pxsize_sim=int(emPar.airy_unit/100))
     else:
