@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.optimize import minimize
 
-from brighteyes_ism.simulation.detector import det_coords
+from brighteyes_ism.simulation.detector import det_coords, airy_to_hex
 
 
 def shift_matrix(geometry: str = 'rect') -> np.ndarray:
@@ -216,7 +216,7 @@ def loss_minimizer(shift_m, shift_t, alpha_0, theta_0, tol, opt, mirror):
         return alpha, theta, mirror
 
 
-def find_parameters(shift_exp: np.ndarray, geometry: str = 'rect', alpha_0: float = 2, theta_0: float = 0.5):
+def find_parameters(shift_exp: np.ndarray, geometry: str = 'rect', name: str = None, alpha_0: float = 2, theta_0: float = 0.5):
     """
     Function returning the parameters describing the dilatation and rotation operators
 
@@ -241,7 +241,12 @@ def find_parameters(shift_exp: np.ndarray, geometry: str = 'rect', alpha_0: floa
         mirror parameter.
     """
 
-    shift_crop = crop_shift(shift_exp, geometry)
+    if name == 'airyscan':
+        shift_vectors = airy_to_hex(shift_exp)
+    else:
+        shift_vectors = shift_exp
+
+    shift_crop = crop_shift(shift_vectors, geometry)
     shift_theor = shift_matrix(geometry)
     tol = 1e-6
     opt = {'maxiter': 10000}
