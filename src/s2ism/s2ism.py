@@ -59,10 +59,13 @@ def optmized_conv(signal, kernel_fft):
         signal = signal.unsqueeze(0) # (1, Nx, Ny, T, Ch)
     else:
         raise Exception('The signal must have 3 or 4 dimensions.')
+    
+    n_axes = kernel_fft.ndim - 3
+    conv_axes = tuple(range(1, n_axes + 1))
 
-    conv = fftn(signal, dim=(1,2)) * kernel_fft  # product of FFT
-    conv = ifftn(conv, dim=(1,2))  # inverse FFT of the product
-    conv = ifftshift(conv, dim=(1,2))  # Rotation of 180 degrees of the phase of the FFT
+    conv = fftn(signal, dim=conv_axes) * kernel_fft  # product of FFT
+    conv = ifftn(conv, dim=conv_axes)  # inverse FFT of the product
+    conv = ifftshift(conv, dim=conv_axes)  # Rotation of 180 degrees of the phase of the FFT
     conv = torch.real(conv)  # Clipping to zero the residual imaginary part
 
     return conv

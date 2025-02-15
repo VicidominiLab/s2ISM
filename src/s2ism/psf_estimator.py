@@ -485,22 +485,22 @@ def combine_psf_irf(psf: np.ndarray, irf: np.ndarray):
         Parameters
         ----------
         psf : np.ndarray
-            4-dimensional array of the spatial PSFs (Nz x Ny x Nx x Nch)
+            4-dimensional array of the spatial PSFs (Nz x Nx x Ny x Nch)
         irf : np.ndarray
             2-dimensional array of the temporal IRFs (Nt x Nch)
 
         Returns
         -------
         psf_irf : np.ndarray
-            5-dimensional array of the spatio-temporal PSFs (Nz x Ny x Nx x Nt x Nch)
+            5-dimensional array of the spatio-temporal PSFs (Nz x Nx x Ny x Nt x Nch)
         """
 
     shape_in = psf.shape
     nbin = irf.shape[0]
     shape_out = shape_in + (nbin,)
 
-    psf_rep = np.repeat(psf, nbin).reshape(shape_out)
-    psf_rep = np.swapaxes(psf_rep, -2, -1)
+    psf_rep = np.repeat(psf, nbin).reshape(shape_out) #(Nz x Ny x Nx x Nch x Nt)
+    psf_rep = np.swapaxes(psf_rep, -2, -1) #(Nz x Ny x Nx x Nt x Nch)
 
     psf_irf = np.einsum('...lm , lm -> ...lm', psf_rep, irf)
 
