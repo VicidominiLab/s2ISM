@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from tqdm import tqdm
 from torch.fft import fftn, ifftn, ifftshift
 from scipy.signal import unit_impulse
+from skimage.registration import phase_cross_correlation
 
 
 def estimate_time_shifts(dset):
@@ -17,26 +18,38 @@ def estimate_time_shifts(dset):
     dset : np.ndarray
         ISM dataset (Nx, Ny, Nt, Ch).
 
-
     Returns
     -------
-    time_shifts : np.ndarray
+    time_delay : np.ndarray
         the time shifts for each channel.
     """
     
-    time_shifts = np.argmax( dset.sum(axis=(0, 1)) , axis=0)
+    nch = dset.shape[-1]
+    ref_channel = nch // 2
+    
+    axes_to_sum = tuple(np.arange(dset.ndim - 2))
+    
+    data = dset.sum(axis=axes_to_sum)
+    
+    time_delay = np.empty(nch)
+    
+    for ch in range(nch):
+        time_delay[ch] = phase_cross_correlation(data[:, ref_channel], data[:, ch], upsample_factor=1, normalization=None)[0].item()
 
-    return time_shifts
+    return time_delay
 
 
-def generate_delta_IRFs(time_shifts, Nbin=81, Nch=25):
+def generate_delta_irfs(time_shifts, Nbin=81, Nch=25):
     """
         It generates 25 delta-like IRFs centered at the time indicated in time_shifts.
         
     Parameters
     ----------
     time_shifts: tuple or 1D np.array of int or ‘mid’
-
+    
+    #TODO Gli shift vanno scritti rispetto al centro dell'array
+    
+    
     Returns
     -------
     irf : np.ndarray
