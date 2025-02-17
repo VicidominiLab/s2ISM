@@ -132,8 +132,8 @@ def amd_update(img, obj, psf_fft, psf_m_fft, eps: float, device: str):
     #         for t in range(T):
     #             up[m, ..., t, c] = torch_conv(fraction[..., t, c], psf_m_fft[m, ..., t, c])
     up = optmized_conv(fraction, psf_m_fft)
-    update = up.sum(-1)
-    update_t = update.sum(-1)
+    update = up.sum(-1) # sum over the channels
+    update_t = update.sum(-1) # sum over the time
 
     del fraction
 
