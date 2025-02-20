@@ -8,8 +8,35 @@ import torch
 import torch.nn.functional as torchpad
 from torch import real, einsum
 from torch.fft import fftn, ifftn, ifftshift
+from torch.fft import rfftn, irfftn
 
 from . import psf_estimator as svr
+
+def partial_convolution_rfft(volume: torch.Tensor, kernel: torch.Tensor, dim1: str = 'ijk', dim2: str = 'jkl', axis: str = 'jk', fourier: tuple = (False, False)):
+    
+    dim3 = dim1 + dim2
+    dim3 = ''.join(sorted(set(dim3), key=dim3.index))
+
+    dims = [dim1, dim2, dim3]
+    axis_list = [[d.find(c) for c in axis] for d in dims]
+
+    if fourier[0] == False:
+        volume_fft = rfftn(volume, dim=axis_list[0])
+    else:
+        volume_fft = volume
+    
+    if fourier[1] == False:
+        kernel_fft = rfftn(kernel, dim=axis_list[1], s=[volume_fft.size(d) for d in axis_list[1]])
+    else:
+        kernel_fft = kernel
+
+    conv = einsum(f'{dim1},{dim2}->{dim3}', volume_fft, kernel_fft)
+
+    conv = irfftn(conv, dim=axis_list[2])  # inverse FFT of the product
+    conv = ifftshift(conv, dim=axis_list[2])  # Rotation of 180 degrees of the phase of the FFT
+    conv = real(conv)  # Clipping to zero the residual imaginary part
+
+    return conv
 
 def partial_convolution(volume: torch.Tensor, kernel: torch.Tensor, dim1: str = 'ijk', dim2: str = 'jkl', axis: str = 'jk', fourier: tuple = (False, False)):
     
@@ -218,7 +245,7 @@ def batch_reconstruction(dset: np.ndarray, psf: np.ndarray, batch_size: list, ov
     k_iter = 1
     n_batch = nx * ny
     
-    if psf.shape[1] + overlap[0] > wx or psf.shape[2] + overlap[1] > wy:
+    if psf.shape[1] + overlap > wx or psf.shape[2] + overlap > wy:
         raise Exception('The PSF is bigger than the batch size. Warning.')
     
     for i in range(nx):
