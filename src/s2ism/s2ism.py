@@ -11,57 +11,31 @@ from torch.fft import fftn, ifftn, ifftshift
 
 from . import psf_estimator as svr
 
-def torch_conv(signal, kernel_fft):
-    """
-    It calculates the 2D circular convolution of a real signal with a kernel using the FFT method using pytorch.
-
-    Parameters
-    ----------
-    signal : torch.Tensor
-        Tensor with dimensions (Nz, Nx, Ny, T) OR (Nx, Ny, T, Ch) to be convolved.
-    kernel_fft : torch.Tensor
-        Kernel with dimension (Nz, Nx, Ny, T, Ch) in the frequency domain of the convolution.
-
-    Returns
-    -------
-        conv : torch.Tensor
-            Circular convolution of signal with kernel.
-    """
-
-    n_axes = kernel_fft.ndim - 2
-    conv_axes = tuple(range(1, n_axes + 1))
-
-    if signal.shape[-1] == kernel_fft.shape[-2]:
-        signal = signal.unsqueeze(-1) # (M, Nx, Ny, T, 1)
-    elif signal.shape[-1] == kernel_fft.shape[-1]:
-        signal = signal.unsqueeze(0) # (1, Nx, Ny, T, Ch)
-    else:
-        raise Exception('The signal must have 3 or 4 dimensions.')
-
-    conv = fftn(signal, dim=conv_axes) * kernel_fft  # product of FFT
-    conv = ifftn(conv, dim=conv_axes)  # inverse FFT of the product
-    conv = ifftshift(conv, dim=conv_axes)  # Rotation of 180 degrees of the phase of the FFT
-    conv = torch.real(conv)  # Clipping to zero the residual imaginary part
-
-    return conv
-
-def partial_convolution(signal, psf_fft, dim1='ijk', dim2='jkl', axis='jk'):
+def partial_convolution(volume: torch.Tensor, kernel: torch.Tensor, dim1: str = 'ijk', dim2: str = 'jkl', axis: str = 'jk', fourier: tuple = (False, False)):
+    
     dim3 = dim1 + dim2
     dim3 = ''.join(sorted(set(dim3), key=dim3.index))
 
     dims = [dim1, dim2, dim3]
     axis_list = [[d.find(c) for c in axis] for d in dims]
 
-    signal_fft = fftn(signal, dim=axis_list[0])
+    if fourier[0] == False:
+        volume_fft = fftn(volume, dim=axis_list[0])
+    else:
+        volume_fft = volume
+    
+    if fourier[1] == False:
+        kernel_fft = fftn(kernel, dim=axis_list[1])
+    else:
+        kernel_fft = kernel
 
-    conv = einsum(f'{dim1},{dim2}->{dim3}', signal_fft, psf_fft)
+    conv = einsum(f'{dim1},{dim2}->{dim3}', volume_fft, kernel_fft)
 
     conv = ifftn(conv, dim=axis_list[2])  # inverse FFT of the product
     conv = ifftshift(conv, dim=axis_list[2])  # Rotation of 180 degrees of the phase of the FFT
     conv = real(conv)  # Clipping to zero the residual imaginary part
 
     return conv
-
 
 def amd_update_fft(img, obj, psf_fft, psf_m_fft, eps: float):
     """
@@ -102,12 +76,10 @@ def amd_update_fft(img, obj, psf_fft, psf_m_fft, eps: float):
     axis_str = alphabet[1:n_dim-1] #Common axis on which to perform convolution Es. 'bcd'
     
     # Update
-    img_estimate = torch_conv(obj, psf_fft).sum(0)
-    #img_estimate = partial_convolution(obj, psf_fft, dim1=str_first, dim2=str_psf, axis=axis_str).sum(0)
+    img_estimate = partial_convolution(psf_fft, obj, dim1=str_psf, dim2=str_first, axis=axis_str, fourier=(1,0)).sum(0)
     fraction = torch.where(img_estimate < eps, 0, img / img_estimate)
     del img_estimate
-    update = torch_conv(fraction, psf_m_fft).sum(-1)
-    #update = partial_convolution(psf_m_fft, fraction, dim1=str_psf, dim2=str_second, axis=axis_str).sum(-1)
+    update = partial_convolution(psf_m_fft, fraction, dim1=str_psf, dim2=str_second, axis=axis_str, fourier=(1,0)).sum(-1)
     del fraction
     obj_new = obj * update
 
@@ -245,6 +217,10 @@ def batch_reconstruction(dset: np.ndarray, psf: np.ndarray, batch_size: list, ov
 
     k_iter = 1
     n_batch = nx * ny
+    
+    if psf.shape[1] + overlap[0] > wx or psf.shape[2] + overlap[1] > wy:
+        raise Exception('The PSF is bigger than the batch size. Warning.')
+    
     for i in range(nx):
         for j in range(ny):
             print(f'Batch {k_iter}/{n_batch}')
@@ -325,10 +301,11 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     # Variables initialization taking into account if the data is spread along the axial dimension or not
 
     if torch.cuda.is_available() and process == 'gpu':
+        flag_cpu = False
         device = torch.device("cuda:0")
     else:
         device = torch.device("cpu")
-        process = 'cpu'
+        flag_cpu = True
         
     
     data = torch.from_numpy(dset * 1.0).type(torch.float32).to(device)
@@ -370,24 +347,24 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
 
     flip_ax = list(np.arange(1, data_check.ndim))
     norm_ax = tuple(np.arange(1, h.ndim))
-    try:
-        h = h / (h.sum(keepdim=True, axis=norm_ax))
-        ht = torch.flip(h, flip_ax)
-    except RuntimeError as e:
-        # NOTE: the string may change?
-        if "CUDA out of memory. " in str(e):
-            device = torch.device("cpu")
-            h = h.type(torch.float64).to(device)
-            h = h / (h.sum(keepdim=True, axis=norm_ax))
+    
+    if flag_cpu == False:
+        try:
+            h_tmp = h / (h.sum(keepdim=True, axis=norm_ax))
+            ht_tmp = torch.flip(h_tmp, flip_ax)
+        except RuntimeError as e:
+            # NOTE: the string may change?
+            if "CUDA out of memory. " in str(e):
+                device = torch.device("cpu")
+                flag_cpu = True
+                warnings.warn("Warning: The algorithms goes in Out Of Memory with CUDA. /nThe algorithm will run on the CPU.")
+            else:
+                raise
 
-            ht = torch.flip(h, flip_ax)
-            
-            process = 'cpu'
-            warnings.warn("Warning: The algorithms goes in Out Of Memory with CUDA. /nThe algorithm will run on the CPU.")
-        else:
-            raise
-
-
+    h = h.type(torch.float64).to(device)
+    h = h / (h.sum(keepdim=True, axis=norm_ax))
+    ht = torch.flip(h, flip_ax)
+    
     O = torch.ones(shape_init).to(device)
     b = torch.finfo(torch.float).eps  # assigning the error machine value
 
@@ -428,13 +405,10 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     else:
         total = None
     cont = 0
-    pbar = tqdm(total=total, desc='Progress', position=0)
-
-    flag_cpu = True
+    
     
     # Try to run on gpu
-    if process == 'gpu':
-        flag_cpu = False
+    if flag_cpu == False:
         try:
             h_fft = fftn(h, dim=flip_ax)
             h = h.to(torch.device("cpu"))
@@ -458,6 +432,8 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         device = torch.device("cuda:0")
         process = 'gpu'
         
+    pbar = tqdm(total=total, desc='Progress', position=0)
+    
     h_fft = fftn(h.to(device), dim=flip_ax)
     del h
     ht_fft = fftn(ht.to(device), dim=flip_ax)
