@@ -11,40 +11,39 @@ from torch.fft import fftn, ifftn, ifftshift
 
 from . import psf_estimator as svr
 
+def torch_conv(signal, kernel_fft):
+    """
+    It calculates the 2D circular convolution of a real signal with a kernel using the FFT method using pytorch.
 
-# def torch_conv_fft(signal, kernel_fft):
-#     """
-#     It calculates the 2D circular convolution of a real signal with a kernel using the FFT method using pytorch.
+    Parameters
+    ----------
+    signal : torch.Tensor
+        Tensor with dimensions (Nz, Nx, Ny, T) OR (Nx, Ny, T, Ch) to be convolved.
+    kernel_fft : torch.Tensor
+        Kernel with dimension (Nz, Nx, Ny, T, Ch) in the frequency domain of the convolution.
 
-#     Parameters
-#     ----------
-#     signal : torch.Tensor
-#         Tensor with dimensions (Nz, Nx, Ny, T) OR (Nx, Ny, T, Ch) to be convolved.
-#     kernel_fft : torch.Tensor
-#         Kernel with dimension (Nz, Nx, Ny, T, Ch) in the frequency domain of the convolution.
+    Returns
+    -------
+        conv : torch.Tensor
+            Circular convolution of signal with kernel.
+    """
 
-#     Returns
-#     -------
-#         conv : torch.Tensor
-#             Circular convolution of signal with kernel.
-#     """
+    n_axes = kernel_fft.ndim - 2
+    conv_axes = tuple(range(1, n_axes + 1))
 
-#     n_axes = kernel_fft.ndim - 2
-#     conv_axes = tuple(range(1, n_axes + 1))
+    if signal.shape[-1] == kernel_fft.shape[-2]:
+        signal = signal.unsqueeze(-1) # (M, Nx, Ny, T, 1)
+    elif signal.shape[-1] == kernel_fft.shape[-1]:
+        signal = signal.unsqueeze(0) # (1, Nx, Ny, T, Ch)
+    else:
+        raise Exception('The signal must have 3 or 4 dimensions.')
 
-#     if signal.shape[-1] == kernel_fft.shape[-2]:
-#         signal = signal.unsqueeze(-1) # (M, Nx, Ny, T, 1)
-#     elif signal.shape[-1] == kernel_fft.shape[-1]:
-#         signal = signal.unsqueeze(0) # (1, Nx, Ny, T, Ch)
-#     else:
-#         raise Exception('The signal must have 3 or 4 dimensions.')
+    conv = fftn(signal, dim=conv_axes) * kernel_fft  # product of FFT
+    conv = ifftn(conv, dim=conv_axes)  # inverse FFT of the product
+    conv = ifftshift(conv, dim=conv_axes)  # Rotation of 180 degrees of the phase of the FFT
+    conv = torch.real(conv)  # Clipping to zero the residual imaginary part
 
-#     conv = fftn(signal, dim=conv_axes) * kernel_fft  # product of FFT
-#     conv = ifftn(conv, dim=conv_axes)  # inverse FFT of the product
-#     conv = ifftshift(conv, dim=conv_axes)  # Rotation of 180 degrees of the phase of the FFT
-#     conv = torch.real(conv)  # Clipping to zero the residual imaginary part
-
-#     return conv
+    return conv
 
 def partial_convolution(signal, psf_fft, dim1='ijk', dim2='jkl', axis='jk'):
     dim3 = dim1 + dim2
@@ -103,10 +102,12 @@ def amd_update_fft(img, obj, psf_fft, psf_m_fft, eps: float):
     axis_str = alphabet[1:n_dim-1] #Common axis on which to perform convolution Es. 'bcd'
     
     # Update
-    img_estimate = partial_convolution(obj, psf_fft, dim1=str_first, dim2=str_psf, axis=axis_str).sum(0)
+    img_estimate = torch_conv(obj, psf_fft).sum(0)
+    #img_estimate = partial_convolution(obj, psf_fft, dim1=str_first, dim2=str_psf, axis=axis_str).sum(0)
     fraction = torch.where(img_estimate < eps, 0, img / img_estimate)
     del img_estimate
-    update = partial_convolution(psf_m_fft, fraction, dim1=str_psf, dim2=str_second, axis=axis_str).sum(-1)
+    update = torch_conv(fraction, psf_m_fft).sum(-1)
+    #update = partial_convolution(psf_m_fft, fraction, dim1=str_psf, dim2=str_second, axis=axis_str).sum(-1)
     del fraction
     obj_new = obj * update
 
@@ -385,6 +386,7 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
             warnings.warn("Warning: The algorithms goes in Out Of Memory with CUDA. /nThe algorithm will run on the CPU.")
         else:
             raise
+
 
     O = torch.ones(shape_init).to(device)
     b = torch.finfo(torch.float).eps  # assigning the error machine value
