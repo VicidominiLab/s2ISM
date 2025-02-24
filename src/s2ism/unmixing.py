@@ -47,7 +47,7 @@ def generate_delta_irfs(time_shifts, Nbin=81, Nch=25):
     ----------
     time_shifts: tuple or 1D np.array of int or ‘mid’
     
-    #TODO Gli shift vanno scritti rispetto al centro dell'array
+    #TO-DO Gli shift vanno scritti rispetto al centro dell'array
     
     
     Returns
@@ -55,12 +55,15 @@ def generate_delta_irfs(time_shifts, Nbin=81, Nch=25):
     irf : np.ndarray
         the irf for each channel (Nbin, Nch).
     """
-        
+
     if isinstance(time_shifts, str) and time_shifts != 'mid':
-        raise ValueError("time_shifts must be a 1D array or tuple or 'mid'.")    
-    
-    if time_shifts == 'mid':
-        time_shifts = np.array([Nbin//2]*Nch, dtype=int)
+        raise ValueError("time_shifts must be a 1D array or tuple or 'mid'.")
+
+    if isinstance(time_shifts, str) and time_shifts == 'mid':
+        time_shifts = np.array([Nbin // 2] * Nch, dtype=int)
+
+    else:
+        time_shifts = time_shifts.copy()
 
     # define 25 dirac delta
     irf = np.asarray(list(map(lambda s: unit_impulse(Nbin, idx=s), time_shifts)), dtype=float).T
