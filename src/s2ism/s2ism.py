@@ -12,53 +12,30 @@ from torch.fft import rfftn, irfftn
 
 from . import psf_estimator as svr
 
-def partial_convolution_rfft(volume: torch.Tensor, kernel: torch.Tensor, dim1: str = 'ijk', dim2: str = 'jkl', axis: str = 'jk', fourier: tuple = (False, False)):
+def partial_convolution_rfft(kernel: torch.Tensor, volume: torch.Tensor, dim1: str = 'ijk', dim2: str = 'jkl', axis: str = 'jk', fourier: tuple = (False, False), padding: list = None):
     
     dim3 = dim1 + dim2
     dim3 = ''.join(sorted(set(dim3), key=dim3.index))
 
     dims = [dim1, dim2, dim3]
     axis_list = [[d.find(c) for c in axis] for d in dims]
-
+        
+    if padding is None:
+        padding = [volume.size(d) for d in axis_list[1]]
+        
     if fourier[0] == False:
-        volume_fft = rfftn(volume, dim=axis_list[0])
+        kernel_fft = rfftn(kernel, dim=axis_list[0], s=padding)
+    else:
+        kernel_fft = kernel
+    
+    if fourier[1] == False:
+        volume_fft = rfftn(volume, dim=axis_list[1], s=padding)
     else:
         volume_fft = volume
     
-    if fourier[1] == False:
-        kernel_fft = rfftn(kernel, dim=axis_list[1], s=[volume_fft.size(d) for d in axis_list[1]])
-    else:
-        kernel_fft = kernel
+    conv = einsum(f'{dim1},{dim2}->{dim3}', kernel_fft, volume_fft)
 
-    conv = einsum(f'{dim1},{dim2}->{dim3}', volume_fft, kernel_fft)
-
-    conv = irfftn(conv, dim=axis_list[2])  # inverse FFT of the product
-    conv = ifftshift(conv, dim=axis_list[2])  # Rotation of 180 degrees of the phase of the FFT
-    conv = real(conv)  # Clipping to zero the residual imaginary part
-
-    return conv
-
-def partial_convolution(volume: torch.Tensor, kernel: torch.Tensor, dim1: str = 'ijk', dim2: str = 'jkl', axis: str = 'jk', fourier: tuple = (False, False)):
-    
-    dim3 = dim1 + dim2
-    dim3 = ''.join(sorted(set(dim3), key=dim3.index))
-
-    dims = [dim1, dim2, dim3]
-    axis_list = [[d.find(c) for c in axis] for d in dims]
-
-    if fourier[0] == False:
-        volume_fft = fftn(volume, dim=axis_list[0])
-    else:
-        volume_fft = volume
-    
-    if fourier[1] == False:
-        kernel_fft = fftn(kernel, dim=axis_list[1])
-    else:
-        kernel_fft = kernel
-
-    conv = einsum(f'{dim1},{dim2}->{dim3}', volume_fft, kernel_fft)
-
-    conv = ifftn(conv, dim=axis_list[2])  # inverse FFT of the product
+    conv = irfftn(conv, dim=axis_list[2], s=padding )  # inverse FFT of the product
     conv = ifftshift(conv, dim=axis_list[2])  # Rotation of 180 degrees of the phase of the FFT
     conv = real(conv)  # Clipping to zero the residual imaginary part
 
@@ -103,10 +80,10 @@ def amd_update_fft(img, obj, psf_fft, psf_m_fft, eps: float):
     axis_str = alphabet[1:n_dim-1] #Common axis on which to perform convolution Es. 'bcd'
     
     # Update
-    img_estimate = partial_convolution(psf_fft, obj, dim1=str_psf, dim2=str_first, axis=axis_str, fourier=(1,0)).sum(0)
+    img_estimate = partial_convolution_rfft(psf_fft, obj, dim1=str_psf, dim2=str_first, axis=axis_str, fourier=(1,0)).sum(0)
     fraction = torch.where(img_estimate < eps, 0, img / img_estimate)
     del img_estimate
-    update = partial_convolution(psf_m_fft, fraction, dim1=str_psf, dim2=str_second, axis=axis_str, fourier=(1,0)).sum(-1)
+    update = partial_convolution_rfft(psf_m_fft, fraction, dim1=str_psf, dim2=str_second, axis=axis_str, fourier=(1,0)).sum(-1)
     del fraction
     obj_new = obj * update
 
@@ -334,11 +311,23 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         device = torch.device("cpu")
         flag_cpu = True
         
-    
+    if flag_cpu == False:
+        try:
+            data_tmp = torch.from_numpy(dset * 1.0).type(torch.float32).to(device)
+            h_tmp = torch.from_numpy(psf * 1.0).type(torch.float32).to(device)
+            del data_tmp, h_tmp
+        except RuntimeError as e:
+            # NOTE: the string may change?
+            if "CUDA out of memory. " in str(e):
+                device = torch.device("cpu")
+                flag_cpu = True
+                warnings.warn("Warning: The algorithms goes in Out Of Memory with CUDA. /nThe algorithm will run on the CPU.")
+            else:
+                raise
+            
     data = torch.from_numpy(dset * 1.0).type(torch.float32).to(device)
     h = torch.from_numpy(psf * 1.0).type(torch.float32).to(device)
     
-
     oddeven_check_x = data.shape[0] % 2
     oddeven_check_y = data.shape[1] % 2
     check_x = False
@@ -433,16 +422,18 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         total = None
     cont = 0
     
+    padding = [h.size(d) for d in flip_ax]
     
     # Try to run on gpu
     if flag_cpu == False:
         try:
-            h_fft = fftn(h, dim=flip_ax)
+            h_fft_tmp = rfftn(h, dim=flip_ax, s=padding) 
             h = h.to(torch.device("cpu"))
-            ht_fft = fftn(ht, dim=flip_ax)
+            ht_fft_tmp = rfftn(ht, dim=flip_ax, s=padding)
             ht = ht.to(torch.device("cpu"))
-            amd_update_fft(data_check, O, h_fft, ht_fft, b)
+            amd_update_fft(data_check, O, h_fft_tmp, ht_fft_tmp, b)
             flag_cpu = False
+            del h_fft_tmp, ht_fft_tmp
             print('optimized code on GPU')
         except RuntimeError as e:
             # NOTE: the string may change?
@@ -461,11 +452,11 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         
     pbar = tqdm(total=total, desc='Progress', position=0)
     
-    h_fft = fftn(h.to(device), dim=flip_ax)
+    h_fft = rfftn(h.to(device), dim=flip_ax, s=padding)
     del h
-    ht_fft = fftn(ht.to(device), dim=flip_ax)
+    ht_fft = rfftn(ht.to(device), dim=flip_ax, s=padding)
     del ht   
-        
+    
     data_check = data_check.to(device)
     O = O.to(device)
     O_all = O_all.to(device)
