@@ -224,10 +224,10 @@ def batch_reconstruction(dset: np.ndarray, psf: np.ndarray, batch_size: list, ov
     k_iter = 1
     n_batch = nx * ny
 
-    rx = np.mod(psf.shape[1], wx)
-    ry = np.mod(psf.shape[2], wy)
-    thx = psf.shape[1] + overlap
-    thy = psf.shape[2] + overlap
+    rx = np.mod(dset.shape[0], wx - overlap)
+    ry = np.mod(dset.shape[1], wy - overlap)
+    thx = psf.shape[1]
+    thy = psf.shape[2]
 
     if np.logical_and(rx > 0, rx < thx) or np.logical_and(ry > 0, ry < thy):
         raise Exception('The PSF is bigger than the last batch size.')
@@ -308,30 +308,13 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         iteration in which the algorithm stops.
 
     """
+    print('codice nuovo')
 
     # Variables initialization taking into account if the data is spread along the axial dimension or not
+    cpu_device = torch.device("cpu")
+    data = torch.from_numpy(dset * 1.0).type(torch.float32).to(cpu_device)
+    h = torch.from_numpy(psf * 1.0).type(torch.float32).to(cpu_device)
 
-    if torch.cuda.is_available() and process == 'gpu':
-        flag_cpu = False
-        device = torch.device("cuda:0")
-    else:
-        device = torch.device("cpu")
-        flag_cpu = True
-
-    if flag_cpu == False:
-        try:
-            data = torch.from_numpy(dset * 1.0).type(torch.float32).to(device)
-            h = torch.from_numpy(psf * 1.0).type(torch.float32).to(device)
-        except RuntimeError as e:
-            if "CUDA out of memory" in str(e):
-                device = torch.device("cpu")
-                flag_cpu = True
-                data = torch.from_numpy(dset * 1.0).type(torch.float32).to(device)
-                h = torch.from_numpy(psf * 1.0).type(torch.float32).to(device)
-                warnings.warn("Warning: The algorithms goes in Out Of Memory with CUDA. /nThe algorithm will run on the CPU.")
-            else:
-                raise e
-    
     oddeven_check_x = data.shape[0] % 2
     oddeven_check_y = data.shape[1] % 2
     check_x = False
@@ -350,7 +333,6 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     Nx = shape_data[0]
     Ny = shape_data[1]
     shape_init = (Nz,) + shape_data[:-1]
-    
 
     crop_pad_x = int((shape_data[0] - h.shape[1]) / 2)
     crop_pad_y = int((shape_data[1] - h.shape[2]) / 2)
@@ -368,26 +350,16 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     flip_ax = list(np.arange(1, data_check.ndim))
     norm_ax = tuple(np.arange(1, h.ndim))
 
+    h = h.type(torch.float64).to(cpu_device)
     h = h / (h.sum(keepdim=True, axis=norm_ax))
+    ht = torch.flip(h, flip_ax)
 
-    if flag_cpu == False:
-        try:
-            ht = torch.flip(h, flip_ax)
-        except RuntimeError as e:
-            if "CUDA out of memory. " in str(e):
-                device = torch.device("cpu")
-                flag_cpu = True
-                h.to(device)
-                ht = torch.flip(h, flip_ax)
-                warnings.warn("Warning: The algorithms goes in Out Of Memory with CUDA. /nThe algorithm will run on the CPU.")
-            else:
-                raise
-
-    O = torch.ones(shape_init).to(device)
+    O = torch.ones(shape_init).to(cpu_device)
     b = torch.finfo(torch.float).eps  # assigning the error machine value
 
     # user can decide how to initialize the object, either with the photon flux of the input image or with
     # a flat initialization
+
     if initialization == 'sum':
         S = data_check.sum(-1) / Nz
         for z in range(Nz):
@@ -399,22 +371,20 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
 
     k = 0
 
-    counts = torch.zeros([2, max_iter + 1]).to(device)
-    diff = torch.zeros([2, max_iter + 1]).to(device)
+    counts = torch.zeros([2, max_iter + 1]).to(cpu_device)
+    diff = torch.zeros([2, max_iter + 1]).to(cpu_device)
     tot = data.sum()
 
     if isinstance(rep_to_save, str) and rep_to_save == 'all':
         size = [max_iter + 1] + list(O.shape)
-        O_all = torch.empty(size).to(device)
+        O_all = torch.empty(size).to(cpu_device)
     elif isinstance(rep_to_save, Iterable):
         l = len(rep_to_save)
         size_b = [l] + list(O.shape)
-        O_all = torch.empty(size_b).to(device)
+        O_all = torch.empty(size_b).to(cpu_device)
 
     pre_flag = True
     flag = True
-
-    # PSF normalization axial plane wise, with respect to the flux of each plane
 
     # Iterative reconstruction process
     if stop != 'auto':
@@ -422,45 +392,39 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
     else:
         total = None
     cont = 0
-    
-    padding = [h.size(d) for d in flip_ax]
-    
-    # Try to run on gpu
-    if flag_cpu == False:
-        try:
-            h_fft_tmp = rfftn(h, dim=flip_ax, s=padding)
-            h = h.to(torch.device("cpu"))  # free VRAM from GPU, move tensor to CPU
-            ht_fft_tmp = rfftn(ht, dim=flip_ax, s=padding)
-            ht = ht.to(torch.device("cpu"))  # free VRAM from GPU, move tensor to CPU
-            amd_update_fft(data_check, O, h_fft_tmp, ht_fft_tmp, b)
-            flag_cpu = False
-            del h_fft_tmp, ht_fft_tmp
-            print('optimized code on GPU')
-        except RuntimeError as e:
-            # NOTE: the string may change?
-            if "CUDA out of memory. " in str(e):
-                flag_cpu = True
-                print("Warning: The algorithms goes in Out Of Memory with CUDA. The algorithm will run on the CPU.")
-            else:
-                raise
 
-    if flag_cpu:
-        device = torch.device("cpu")
-        process = 'cpu'
-    else:
-        device = torch.device("cuda:0")
-        process = 'gpu'
-        
-    pbar = tqdm(total=total, desc='Progress', position=0)
-    
-    h_fft = rfftn(h.to(device), dim=flip_ax, s=padding)
+    padding = [h.size(d) for d in flip_ax]
+
+    # PSF normalization axial plane wise, with respect to the flux of each plane
+    h_tmp = h / (h.sum(keepdim=True, axis=norm_ax))
+    ht_tmp = torch.flip(h_tmp, flip_ax)
+
+    h_fft = rfftn(h, dim=flip_ax, s=padding)
     del h
-    ht_fft = rfftn(ht.to(device), dim=flip_ax, s=padding)
-    del ht   
-    
-    data_check = data_check.to(device)
-    O = O.to(device)
-    O_all = O_all.to(device)
+    ht_fft = rfftn(ht, dim=flip_ax, s=padding)
+    del ht
+
+    # Try to run on gpu
+    if process == 'gpu' and torch.cuda.is_available():
+        try:
+            gpu_device = torch.device("cuda:0")
+            h_fft = h_fft.to(gpu_device)
+            ht_fft = ht_fft.to(gpu_device)
+            data_check = data_check.to(gpu_device)
+            O = O.to(gpu_device)
+            _ = amd_update_fft(data_check, O, h_fft, ht_fft, b)
+            print('The algorithm will run on the GPU.')
+        except RuntimeError as e:
+            if "CUDA out of memory. " in str(e):
+                print("Warning: The algorithms goes in Out Of Memory with CUDA. The algorithm will run on the CPU.")
+                h_fft = h_fft.to(cpu_device)
+                ht_fft = ht_fft.to(cpu_device)
+                data_check = data_check.to(cpu_device)
+                O = O.to(cpu_device)
+            else:
+                raise e
+
+    pbar = tqdm(total=total, desc='Progress', position=0)
 
     while flag:
         O_new = amd_update_fft(data_check, O, h_fft, ht_fft, b)
@@ -479,8 +443,7 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         k += 1
         pbar.update(1)
     pbar.close()
-    
-            
+
     #
     if check_x:
         if rep_to_save == 'last':
