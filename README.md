@@ -10,15 +10,10 @@ and sampling from a conventional ISM dataset acquired by a laser scanning micros
 The details of the method are described in the paper [Structured Detection for Simultaneous Super-Resolution and Optical Sectioning in Laser Scanning Microscopy](https://doi.org/10.48550/arXiv.2406.12542).
 
 The ISM dataset should be a numpy array in the format (x, y, channel), where the channel dimension is the flattened 2D
-dimension of the detector array. If the lifetime data are present, the array should be in the format (x, y, time, channel).
+dimension of the detector array. If lifetime data are present, the array should be in the format (x, y, time, channel).
 
 This package also contains a module for simulating instrument-specific PSFs by retrieving the 
 relevant parameters automatically from the raw dataset with minimal user inputs.
-
-**Important**: the current implementation of the automatic PSF generation 
-works under the assumption that the detectors of the array are arranged in a squared fashion.
-If this is not the case for your detector (e.g. AiryScan), you need to provide the PSFs manually.
-
 
 ## Installation
 
