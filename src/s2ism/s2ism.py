@@ -308,7 +308,6 @@ def max_likelihood_reconstruction(dset, psf, stop='fixed', max_iter: int = 100,
         iteration in which the algorithm stops.
 
     """
-    print('codice nuovo')
 
     # Variables initialization taking into account if the data is spread along the axial dimension or not
     cpu_device = torch.device("cpu")
