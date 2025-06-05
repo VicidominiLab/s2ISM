@@ -45,7 +45,7 @@ https://github.com/VicidominiLab/s2ISM/tree/main/examples
 
 If you find s²ISM useful for your research, please cite it as:
 
-_Zunino, A., Garrè, G., Perego, E., Zappone, S., Donato, M., & Vicidomini, G. Structured Detection for Simultaneous Super-Resolution and Optical Sectioning in Laser Scanning Microscopy. ArXiv (2024). https://doi.org/10.48550/arXiv.2406.12542_
+_Zunino, A., Garrè, G., Perego, E. et al. Structured detection for simultaneous super-resolution and optical sectioning in laser scanning microscopy. Nat. Photon. (2025). https://doi.org/10.1038/s41566-025-01695-0_
 
 ## License
 
