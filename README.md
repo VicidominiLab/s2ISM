@@ -7,7 +7,7 @@
 This python package implements s²ISM (Super-resolution Sectioning Image Scanning Microscopy),
 a computational technique to reconstruct images with enhanced resolution, optical sectioning, signal-to-noise ratio
 and sampling from a conventional ISM dataset acquired by a laser scanning microscope equipped with a detector array.
-The details of the method are described in the paper [Structured Detection for Simultaneous Super-Resolution and Optical Sectioning in Laser Scanning Microscopy](https://doi.org/10.48550/arXiv.2406.12542).
+The details of the method are described in the paper [Structured Detection for Simultaneous Super-Resolution and Optical Sectioning in Laser Scanning Microscopy](https://www.nature.com/articles/s41566-025-01695-0).
 
 The ISM dataset should be a numpy array in the format (x, y, channel), where the channel dimension is the flattened 2D
 dimension of the detector array. If lifetime data are present, the array should be in the format (x, y, time, channel).
