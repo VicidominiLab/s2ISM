@@ -155,7 +155,8 @@ def psf_estimator_from_data(data: np.ndarray, exPar: sim.simSettings, emPar: sim
     stack : str, optional
         Here one can choose how to generate the PSF stack ( symmetrically or not with respect to the focal plane).
         The default is 'symmetrical'.
-
+    check_alignment : bool, optional
+        If True, the algorithm tries to match the misalignment of the detector from the fingerprint.
 
     Returns
     -------
