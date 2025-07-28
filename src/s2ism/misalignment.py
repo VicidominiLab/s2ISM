@@ -84,7 +84,7 @@ def find_misalignment(dset, pxpitch, mag, na, wl):
 def realign_psf(psf):
 
     nz, ny, nx, nch = psf.shape
-    patch = psf[1].sum(-1)
+    patch = psf[0].sum(-1)
 
     yc, xc = ny // 2, nx // 2  # integer center
 
