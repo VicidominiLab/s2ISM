@@ -44,16 +44,18 @@ def gaussian_fit(image):
 
     if result.success:
         _, x0, y0, _, _ = result.x
-        return x0 - x0_0, y0 - y0_0, result.x, gfit  # return subpixel position and full params
+        return x0 - x0_0, y0 - y0_0, result.x, gfit
     else:
         return None  # fitting failed
     
-def locate(dset, pxpitch, mag, na, wl):
+def find_misalignment(dset, pxpitch, mag, na, wl):
     
     nch = int(np.sqrt(dset.shape[-1]))
-    
-    fingerprint = dset.sum((0,1)).reshape(nch, nch)
-    
+
+    axis_to_sum = tuple(np.arange(dset.ndim-1)) # It automatically takes into account time, if present
+
+    fingerprint = dset.sum(axis_to_sum).reshape(nch, nch)
+
     gauss = gaussian_fit(fingerprint)
     
     if gauss is None:
@@ -61,7 +63,7 @@ def locate(dset, pxpitch, mag, na, wl):
         tip, tilt = np.zeros(2)
     else:
         scale = 2*np.pi*na/wl
-        pxsize = pxpitch / mag
+        pxsize = pxpitch/mag
         
         coords = -np.asarray([gauss[1], gauss[0]])
         
@@ -78,4 +80,5 @@ def locate(dset, pxpitch, mag, na, wl):
         tip, tilt = rot_coords * pxsize * scale
 
     return tip, tilt
-    
+
+def realign_psf
