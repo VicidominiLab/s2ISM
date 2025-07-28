@@ -204,10 +204,14 @@ def psf_estimator_from_data(data: np.ndarray, exPar: sim.simSettings, emPar: sim
 
     if check_alignment is True:
         tip, tilt = mis.find_misalignment(data, grid.pxpitch, grid.M, exPar.na, exPar.wl)
-
+        exPar.abe_index = [1, 2]
+        exPar.abe_ampli = [tip, tilt]
 
     Psf, detPsf, exPsf = sim.SPAD_PSF_3D(grid_simul, exPar, emPar, n_photon_excitation=n_photon_excitation,
                                          stedPar=stedPar, spad=None, stack=stack)  # upsampled PSFs generation
+
+    if check_alignment is True:
+        Psf = mis.realign_psf(Psf)
 
     # downsampling the PSFs to the original pixel size
     if downsample:
