@@ -1,0 +1,81 @@
+import numpy as np
+from scipy.optimize import least_squares
+
+from brighteyes_ism.analysis.APR_lib import ShiftVectors
+from .shift_vectors_minimizer import rotation_matrix, find_parameters
+
+def gaussian_2d(params, x, y):
+    a, x0, y0, sigma, b = params
+    return a * np.exp(-((x - x0)**2 + (y - y0)**2) / (2 * sigma**2)) + b
+
+def residuals(params, x, y, data):
+    model = gaussian_2d(params, x, y)
+    return (model - data).ravel()
+
+def gaussian_fit(image):
+    h, w = image.shape
+    y, x = np.mgrid[0:h, 0:w]
+
+    # Initial guess
+    a0 = image.max() - image.min()
+    x0_0 = (w-1) / 2
+    y0_0 = (h-1) / 2
+    sigma0 = min(h, w) / 4
+    b0 = image.min()
+    p0 = [a0, x0_0, y0_0, sigma0, b0]
+
+    # Parameter bounds
+    bounds = (
+        [0,        0,     0,     0.5,    0],  # lower bounds
+        [np.inf,   w,     h,     w,      np.inf]    # upper bounds
+    )
+
+    result = least_squares(
+        residuals,
+        p0,
+        args=(x, y, image),
+        bounds=bounds,
+        method='trf',
+        loss='cauchy',
+        f_scale=0.1     # sensitivity to outliers
+    )
+
+    gfit = gaussian_2d(result.x, x, y)
+
+    if result.success:
+        _, x0, y0, _, _ = result.x
+        return x0 - x0_0, y0 - y0_0, result.x, gfit  # return subpixel position and full params
+    else:
+        return None  # fitting failed
+    
+def locate(dset, pxpitch, mag, na, wl):
+    
+    nch = int(np.sqrt(dset.shape[-1]))
+    
+    fingerprint = dset.sum((0,1)).reshape(nch, nch)
+    
+    gauss = gaussian_fit(fingerprint)
+    
+    if gauss is None:
+        print('\n Warning: Fitting not successful. Using no tip and no tilt.\n')
+        tip, tilt = np.zeros(2)
+    else:
+        scale = 2*np.pi*na/wl
+        pxsize = pxpitch / mag
+        
+        coords = -np.asarray([gauss[1], gauss[0]])
+        
+        shift, _ = ShiftVectors(dset[5:-5, 5:-5], 50, dset.shape[-1]//2, filter_sigma=1)
+        _, rotation, mirroring = find_parameters(shift)
+
+        if mirroring == -1:
+            coords[1] *= -1
+
+        rm = rotation_matrix(rotation)
+
+        rot_coords = np.einsum('ij, j -> i', rm, coords)
+        
+        tip, tilt = rot_coords * pxsize * scale
+
+    return tip, tilt
+    
