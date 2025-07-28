@@ -5,14 +5,66 @@ from brighteyes_ism.analysis.APR_lib import ShiftVectors
 from .shift_vectors_minimizer import rotation_matrix, find_parameters
 
 def gaussian_2d(params, x, y):
+    """
+    Compute a 2D Gaussian.
+
+    Parameters
+    ----------
+    params : array-like
+        [amplitude, x0, y0, sigma, offset]
+    x : np.ndarray
+        X-coordinates
+    y : np.ndarray
+        Y-coordinates
+
+    Returns
+    -------
+    np.ndarray
+        2D Gaussian evaluated at (x, y)
+    """
+
     a, x0, y0, sigma, b = params
     return a * np.exp(-((x - x0)**2 + (y - y0)**2) / (2 * sigma**2)) + b
 
 def residuals(params, x, y, data):
+    """
+    Compute residuals between data and 2D Gaussian model.
+
+    Parameters
+    ----------
+    params : array-like
+        Gaussian parameters
+    x : np.ndarray
+        X-coordinates
+    y : np.ndarray
+        Y-coordinates
+    data : np.ndarray
+        Observed data
+
+    Returns
+    -------
+    np.ndarray
+        Flattened residuals
+    """
+
     model = gaussian_2d(params, x, y)
     return (model - data).ravel()
 
 def gaussian_fit(image):
+    """
+    Fit a 2D Gaussian to an image.
+
+    Parameters
+    ----------
+    image : np.ndarray
+        2D input image
+
+    Returns
+    -------
+    tuple or None
+        (x shift, y shift, fitted parameters, fitted Gaussian) if successful, else None
+    """
+
     h, w = image.shape
     y, x = np.mgrid[0:h, 0:w]
 
@@ -49,7 +101,28 @@ def gaussian_fit(image):
         return None  # fitting failed
     
 def find_misalignment(dset, pxpitch, mag, na, wl):
-    
+    """
+    Estimate tip and tilt misalignment from a PSF dataset.
+
+    Parameters
+    ----------
+    dset : np.ndarray
+        Input PSF dataset
+    pxpitch : float
+        Pixel pitch
+    mag : float
+        Magnification
+    na : float
+        Numerical aperture
+    wl : float
+        Wavelength
+
+    Returns
+    -------
+    tuple
+        (tip, tilt) misalignment values
+    """
+
     nch = int(np.sqrt(dset.shape[-1]))
 
     axis_to_sum = tuple(np.arange(dset.ndim-1)) # It automatically takes into account time, if present
@@ -82,6 +155,19 @@ def find_misalignment(dset, pxpitch, mag, na, wl):
     return tip, tilt
 
 def realign_psf(psf):
+    """
+    Realign a PSF stack so the brightest pixel is centered.
+
+    Parameters
+    ----------
+    psf : np.ndarray
+        Input PSF stack (nz, ny, nx, nch)
+
+    Returns
+    -------
+    np.ndarray
+        Realigned PSF stack
+    """
 
     nz, ny, nx, nch = psf.shape
     patch = psf[0].sum(-1)
