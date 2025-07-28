@@ -81,4 +81,23 @@ def find_misalignment(dset, pxpitch, mag, na, wl):
 
     return tip, tilt
 
-def realign_psf
+def realign_psf(psf):
+
+    h, w, nch = psf.shape
+    patch = psf.sum(-1)
+
+    yc, xc = h // 2, w // 2  # integer center
+
+    # Find coordinates of the brightest pixel
+    peak_index = np.argmax(patch)
+    y_peak, x_peak = np.unravel_index(peak_index, patch.shape)
+
+    # Compute integer shift needed
+    y_shift = yc - y_peak
+    x_shift = xc - x_peak
+
+    # Apply integer pixel shift using roll
+    aligned_psf = np.roll(patch, shift=y_shift, axis=0)
+    aligned_psf = np.roll(aligned_psf, shift=x_shift, axis=1)
+
+    return aligned_psf
