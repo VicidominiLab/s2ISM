@@ -12,6 +12,8 @@ from brighteyes_ism.analysis.APR_lib import ShiftVectors
 from . import shift_vectors_minimizer as svm
 from . import mag_finder as mag
 
+from . import misalignment as mis
+
 
 class GridFinder(sim.GridParameters):
     """
@@ -124,7 +126,7 @@ def psf_width(pxsizex: float, pxsizez: float, Nz: int, simPar: sim.simSettings, 
 
 def psf_estimator_from_data(data: np.ndarray, exPar: sim.simSettings, emPar: sim.simSettings, grid: sim.GridParameters,
                             downsample: bool = True, stedPar: sim.simSettings=None, z_out_of_focus: str = 'ToFind',
-                            n_photon_excitation: int = 1, stack='symmetrical'):
+                            n_photon_excitation: int = 1, stack='symmetrical', check_alignment: bool = False):
     """
     Function generating rotated PSFs according to the pinholes distribution of the SPAD array detector. This function
     is retrieving a set of parameters from the ISM dataset itself, necessary to obtain an optimal simulation of the
@@ -199,6 +201,10 @@ def psf_estimator_from_data(data: np.ndarray, exPar: sim.simSettings, emPar: sim
     grid_simul.pxsizex = pxsize_simul
     grid_simul.pxsizez = pxsizez
     grid_simul.N = N
+
+    if check_alignment is True:
+        tip, tilt = mis.find_misalignment(data, grid.pxpitch, grid.M, exPar.na, exPar.wl)
+
 
     Psf, detPsf, exPsf = sim.SPAD_PSF_3D(grid_simul, exPar, emPar, n_photon_excitation=n_photon_excitation,
                                          stedPar=stedPar, spad=None, stack=stack)  # upsampled PSFs generation
