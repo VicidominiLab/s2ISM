@@ -3,5 +3,6 @@ matplotlib
 scipy
 scikit-image
 brighteyes-ism
+brighteyes-mcs-reader>=0.1.0
 torch
 tqdm

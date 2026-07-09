@@ -32,6 +32,7 @@ It requires the following Python packages
     scipy
     scikit-image
     brighteyes-ism
+    brighteyes-mcs-reader
     torch
     tqdm
 
@@ -40,6 +41,15 @@ It requires the following Python packages
 You can find examples of usage here:
 
 https://github.com/VicidominiLab/s2ISM/tree/main/examples
+
+BrightEyes-MCS HDF5 (legacy) files can be loaded through the reader package:
+
+```python
+from s2ism import load_mcs, read_mcs_signal
+
+data, meta = load_mcs("measurement.h5")
+signal = read_mcs_signal("measurement.h5", time=0, depth=0, channel="sum")
+```
 
 ## Citation
 
@@ -83,5 +93,4 @@ If you encounter any problems, please [file an issue] along with a detailed desc
 [tox]: https://tox.readthedocs.io/en/latest/
 [pip]: https://pypi.org/project/pip/
 [PyPI]: https://pypi.org/project/s2ism/
-
 
